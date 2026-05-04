@@ -1,0 +1,187 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+//////////////////////
+// ENUMS
+//////////////////////
+
+enum Role {
+  SUPER_ADMIN
+  HR_ADMIN
+  EMPLOYEE
+}
+
+enum EmploymentStatus {
+  ACTIVE
+  RESIGNED
+}
+
+enum AttendanceStatus {
+  PRESENT
+  LATE
+  ABSENT
+  OVERTIME
+}
+
+enum LeaveStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+//////////////////////
+// MODELS
+//////////////////////
+
+model User {
+  id            String   @id @default(uuid())
+  email         String   @unique
+  password      String
+  role          Role
+
+  employee      Employee?
+  refreshTokens RefreshToken[]
+
+  createdAt     DateTime @default(now())
+}
+
+model Shift {
+  id            String   @id @default(uuid())
+  code          String   @unique   // SHIFT-MORNING
+  name          String
+  startTime     String
+  endTime       String
+  lateTolerance Int
+
+  employees     Employee[]
+}
+
+model RefreshToken {
+  id         String   @id @default(uuid())
+  token      String   @unique
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+}
+
+model Department {
+  id        String     @id @default(uuid())
+  code      String     @unique   // DEP-0001
+  name      String
+
+  employees Employee[]
+}
+
+model Position {
+  id        String     @id @default(uuid())
+  code      String     @unique   // POS-0001
+  name      String
+
+  employees Employee[]
+}
+
+model Employee {
+  id           String   @id @default(uuid())
+  code         String   @unique   // EMP-0001
+
+  userId       String   @unique
+  user         User     @relation(fields: [userId], references: [id])
+
+  fullName     String
+  salary       Float
+  status       EmploymentStatus
+
+  departmentId String
+  department   Department @relation(fields: [departmentId], references: [id])
+
+  positionId   String
+  position     Position   @relation(fields: [positionId], references: [id])
+
+  shiftId      String
+  shift        Shift      @relation(fields: [shiftId], references: [id])
+
+  attendances  Attendance[]
+  leaves       Leave[]
+  payrolls     Payroll[]
+
+  createdAt    DateTime @default(now())
+}
+
+model Attendance {
+  id               String   @id @default(uuid())
+  employeeId       String
+  employee         Employee @relation(fields: [employeeId], references: [id])
+
+  date             DateTime
+
+  clockIn          DateTime?
+  clockOut         DateTime?
+
+  lateMinutes      Int      @default(0)
+  status           AttendanceStatus
+
+  isOvertime       Boolean  @default(false)
+  overtimeMinutes  Int      @default(0)
+
+  createdAt        DateTime @default(now())
+
+  @@unique([employeeId, date])
+}
+
+model Leave {
+  id          String       @id @default(uuid())
+  code        String       @unique   // LV-20260501-001
+
+  employeeId  String
+  employee    Employee     @relation(fields: [employeeId], references: [id])
+
+  type        String
+  startDate   DateTime
+  endDate     DateTime
+  status      LeaveStatus
+
+  approvedBy  String?
+
+  createdAt   DateTime @default(now())
+}
+
+model Payroll {
+  id              String   @id @default(uuid())
+  employeeId      String
+  employee        Employee @relation(fields: [employeeId], references: [id])
+
+  month           Int
+  year            Int
+
+  baseSalary      Float
+  totalAttendance Int
+  totalLate       Int
+  totalAbsent     Int
+
+  overtimePay     Float
+  deductions      Float
+
+  totalSalary     Float
+
+  createdAt       DateTime @default(now())
+
+  @@unique([employeeId, month, year]) // 🔥 penting
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String
+  action    String
+  entity    String
+  entityId  String
+
+  createdAt DateTime @default(now())
+}
