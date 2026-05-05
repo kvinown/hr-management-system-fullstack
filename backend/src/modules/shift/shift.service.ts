@@ -12,8 +12,27 @@ export class ShiftService {
 		});
 	}
 
-	static async getAll() {
-		return prisma.shift.findMany();
+	static async getAll(page: number, limit: number, isActive: boolean) {
+		const skip = (page - 1) * limit;
+
+		const [data, total_items] = await Promise.all([
+			prisma.shift.findMany({
+				where: { isActive },
+				skip,
+				take: limit,
+			}),
+			prisma.shift.count({ where: { isActive } }),
+		]);
+
+		return {
+			data,
+			pagination: {
+				page,
+				limit,
+				total_items,
+				total_pages: Math.ceil(total_items / limit) || 1,
+			},
+		};
 	}
 
 	static async update(id: string, data: any) {
@@ -23,9 +42,18 @@ export class ShiftService {
 		});
 	}
 
-	static async delete(id: string) {
-		return prisma.shift.delete({
+	// Fungsi khusus untuk mengubah status (Active/Inactive)
+	static async changeStatus(id: string, isActive: boolean) {
+		return prisma.shift.update({
 			where: { id },
+			data: { isActive },
+		});
+	}
+
+	static async delete(id: string) {
+		return prisma.shift.update({
+			where: { id },
+			data: { isActive: false },
 		});
 	}
 }

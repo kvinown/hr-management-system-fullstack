@@ -11,6 +11,8 @@ router.get("/", authenticate, DepartmentController.getAll);
 // 🔒 HR only
 router.post("/", authenticate, authorize("HR_ADMIN"), DepartmentController.create);
 
+router.patch("/:id/status", authenticate, authorize("HR_ADMIN"), DepartmentController.changeStatus);
+
 router.put("/:id", authenticate, authorize("HR_ADMIN"), DepartmentController.update);
 
 router.delete("/:id", authenticate, authorize("HR_ADMIN"), DepartmentController.delete);

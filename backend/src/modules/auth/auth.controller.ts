@@ -4,14 +4,13 @@ import { AuthService } from "./auth.service";
 export class AuthController {
 	static async register(req: Request, res: Response) {
 		try {
-			const { email, password, role } = req.body;
+			// 🔥 Tambahkan destructuring 'name'
+			const { name, email, password, role } = req.body;
 
-			const user = await AuthService.register(email, password, role);
+			// 🔥 Kirim parameter name
+			const user = await AuthService.register(name, email, password, role);
 
-			res.json({
-				message: "User created",
-				user,
-			});
+			res.json({ message: "User created", user });
 		} catch (error: any) {
 			res.status(400).json({ error: error.message });
 		}
@@ -38,6 +37,18 @@ export class AuthController {
 			res.json(result);
 		} catch (error: any) {
 			res.status(401).json({ error: error.message });
+		}
+	}
+
+	static async logout(req: Request, res: Response) {
+		try {
+			const { refreshToken } = req.body;
+
+			await AuthService.logout(refreshToken);
+
+			res.json({ message: "Logged out successfully" });
+		} catch (error: any) {
+			res.status(400).json({ error: error.message });
 		}
 	}
 }

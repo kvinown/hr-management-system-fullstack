@@ -27,6 +27,7 @@ enum AttendanceStatus {
   LATE
   ABSENT
   OVERTIME
+  LEAVE
 }
 
 enum LeaveStatus {
@@ -35,12 +36,14 @@ enum LeaveStatus {
   REJECTED
 }
 
+
 //////////////////////
 // MODELS
 //////////////////////
 
 model User {
   id            String   @id @default(uuid())
+  name          String
   email         String   @unique
   password      String
   role          Role
@@ -58,6 +61,7 @@ model Shift {
   startTime     String
   endTime       String
   lateTolerance Int
+  isActive      Boolean  @default(true)
 
   employees     Employee[]
 }
@@ -76,6 +80,7 @@ model Department {
   id        String     @id @default(uuid())
   code      String     @unique   // DEP-0001
   name      String
+  isActive      Boolean  @default(true)
 
   employees Employee[]
 }
@@ -84,6 +89,7 @@ model Position {
   id        String     @id @default(uuid())
   code      String     @unique   // POS-0001
   name      String
+  isActive      Boolean  @default(true)
 
   employees Employee[]
 }
@@ -95,7 +101,6 @@ model Employee {
   userId       String   @unique
   user         User     @relation(fields: [userId], references: [id])
 
-  fullName     String
   salary       Float
   status       EmploymentStatus
 
@@ -116,41 +121,55 @@ model Employee {
 }
 
 model Attendance {
-  id               String   @id @default(uuid())
-  employeeId       String
-  employee         Employee @relation(fields: [employeeId], references: [id])
+  id              String   @id @default(uuid())
+  employeeId      String
+  employee        Employee @relation(fields: [employeeId], references: [id])
+  
+  date            DateTime
+  clockIn         DateTime? 
+  clockOut        DateTime? 
+  lateMinutes     Int       @default(0)
+  overtimeMinutes Int       @default(0)
+  isOvertime      Boolean   @default(false)
+  status          AttendanceStatus
+  
+  leaveId         String?   
+  leave           Leave?    @relation(fields: [leaveId], references: [id])
 
-  date             DateTime
+  // ==========================================
+  // 🔥 FITUR 4: GEOFENCING & BIOMETRIC
+  // ==========================================
+  clockInLat      Float?    // Latitude saat absen masuk
+  clockInLng      Float?    // Longitude saat absen masuk
+  clockInPhoto    String?   // URL foto selfie absen masuk
+  clockOutLat     Float?    
+  clockOutLng     Float?    
+  clockOutPhoto   String?   
 
-  clockIn          DateTime?
-  clockOut         DateTime?
+  // ==========================================
+  // 🔥 FITUR 1 & 2: AUTOMATION FLAGS
+  // ==========================================
+  isAutoClockOut  Boolean   @default(false) // True jika sistem yang memulangkan paksa
+  isAutoAbsent    Boolean   @default(false) // True jika sistem yang meng-alphakan
+  notes           String?   @db.Text        // Catatan sistem: "Auto absent by system at 23:55"
 
-  lateMinutes      Int      @default(0)
-  status           AttendanceStatus
-
-  isOvertime       Boolean  @default(false)
-  overtimeMinutes  Int      @default(0)
-
-  createdAt        DateTime @default(now())
-
-  @@unique([employeeId, date])
+  createdAt       DateTime  @default(now())
 }
 
 model Leave {
-  id          String       @id @default(uuid())
-  code        String       @unique   // LV-20260501-001
-
+  id          String      @id @default(uuid())
+  code        String      @unique
   employeeId  String
-  employee    Employee     @relation(fields: [employeeId], references: [id])
-
-  type        String
+  employee    Employee    @relation(fields: [employeeId], references: [id])
+  type        String      
   startDate   DateTime
   endDate     DateTime
-  status      LeaveStatus
+  reason      String      @db.Text
+  status      LeaveStatus @default(PENDING)
+  approvedBy  String?     
+  createdAt   DateTime    @default(now())
 
-  approvedBy  String?
-
-  createdAt   DateTime @default(now())
+  attendances Attendance[] // 🔥 Relasi balik dari Attendance
 }
 
 model Payroll {
@@ -184,4 +203,23 @@ model AuditLog {
   entityId  String
 
   createdAt DateTime @default(now())
+}
+
+model Setting {
+  id          String   @id @default(uuid())
+  key         String   @unique // Contoh: "OFFICE_LAT", "OFFICE_LNG", "LATE_PENALTY_PER_MINUTE", "MAX_GEOFENCE_RADIUS"
+  value       String   @db.Text // Disimpan dalam bentuk string/JSON string
+  description String?  // Penjelasan untuk HR (misal: "Latitude titik tengah kantor")
+  
+  updatedAt   DateTime @updatedAt
+}
+
+model PayrollComponent {
+  id          String   @id @default(uuid())
+  name        String   // Contoh: "Tunjangan Transport", "Denda Telat", "BPJS"
+  type        String   // "EARNING" (Pendapatan) atau "DEDUCTION" (Potongan)
+  isDefault   Boolean  @default(false) // Jika true, otomatis berlaku untuk semua karyawan
+  amount      Float    // Nominal tetap (Bisa juga diset 0 jika angkanya dinamis dari perhitungan absen)
+  
+  createdAt   DateTime @default(now())
 }

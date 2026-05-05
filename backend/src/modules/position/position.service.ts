@@ -10,8 +10,28 @@ export class PositionService {
 		});
 	}
 
-	static async getAll() {
-		return prisma.position.findMany();
+	// 🔥 Tambahkan parameter page, limit, dan isActive
+	static async getAll(page: number, limit: number, isActive: boolean) {
+		const skip = (page - 1) * limit;
+
+		const [data, total_items] = await Promise.all([
+			prisma.position.findMany({
+				where: { isActive },
+				skip,
+				take: limit,
+			}),
+			prisma.position.count({ where: { isActive } }),
+		]);
+
+		return {
+			data,
+			pagination: {
+				page,
+				limit,
+				total_items,
+				total_pages: Math.ceil(total_items / limit) || 1,
+			},
+		};
 	}
 
 	static async update(id: string, name: string) {
@@ -21,9 +41,18 @@ export class PositionService {
 		});
 	}
 
-	static async delete(id: string) {
-		return prisma.position.delete({
+	// Fungsi khusus untuk mengubah status (Active/Inactive)
+	static async changeStatus(id: string, isActive: boolean) {
+		return prisma.position.update({
 			where: { id },
+			data: { isActive },
+		});
+	}
+
+	static async delete(id: string) {
+		return prisma.position.update({
+			where: { id },
+			data: { isActive: false },
 		});
 	}
 }

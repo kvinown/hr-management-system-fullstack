@@ -14,6 +14,8 @@ router.get("/:id", authenticate, authorize("SUPER_ADMIN", "HR_ADMIN"), EmployeeC
 
 router.put("/:id", authenticate, authorize("SUPER_ADMIN", "HR_ADMIN"), EmployeeController.update);
 
+router.patch("/:id/status", authenticate, authorize("HR_ADMIN"), EmployeeController.changeStatus);
+
 router.delete("/:id", authenticate, authorize("SUPER_ADMIN", "SUPER_ADMIN"), EmployeeController.delete);
 
 export default router;

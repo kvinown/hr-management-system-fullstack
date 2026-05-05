@@ -163,7 +163,7 @@ export class AttendanceService {
 				include: {
 					employee: {
 						select: {
-							fullName: true,
+							user: { select: { name: true } }, // 🔥 Memanggil name dari relasi user
 						},
 					},
 				},
@@ -178,10 +178,94 @@ export class AttendanceService {
 
 		return {
 			data,
-			meta: {
-				total,
+			pagination: {
 				page: Number(page),
-				lastPage: Math.ceil(total / Number(limit)),
+				limit: Number(limit),
+				total_items: total,
+				total_pages: Math.ceil(total / Number(limit)) || 1,
+			},
+		};
+	}
+
+	// Fungsi getHistory agar sesuai dengan yang didefinisikan di attendance.controller.ts sebelumnya
+	static async getHistory(userId: string) {
+		const employee = await prisma.employee.findUnique({
+			where: { userId },
+		});
+
+		if (!employee) throw new Error("Employee not found");
+
+		return prisma.attendance.findMany({
+			where: { employeeId: employee.id },
+			orderBy: { date: "desc" },
+		});
+	}
+
+	static async getAll(startDate?: string, endDate?: string, page: number = 1, limit: number = 10, user?: any) {
+		const skip = (page - 1) * limit;
+
+		// 1. Siapkan keranjang filter (Where Clause)
+		let whereClause: any = {};
+
+		// 2. Jika frontend mengirim rentang tanggal, masukkan ke keranjang
+		if (startDate && endDate) {
+			whereClause.date = {
+				gte: new Date(startDate),
+				lte: new Date(endDate),
+			};
+		}
+
+		// 3. 🔒 KEAMANAN: Jika yang login adalah Karyawan biasa, KUNCI datanya!
+		if (user && user.role === "EMPLOYEE") {
+			// Cari ID Karyawan dia berdasarkan ID User yang login
+			const employee = await prisma.employee.findUnique({
+				where: { userId: user.id },
+			});
+
+			// Jika tidak ketemu (mungkin datanya rusak), kembalikan array kosong
+			if (!employee) {
+				return {
+					data: [],
+					pagination: { total_items: 0, total_pages: 0, page, limit },
+				};
+			}
+
+			// Masukkan ID Karyawan ke keranjang filter
+			whereClause.employeeId = employee.id;
+		}
+
+		// 4. Eksekusi query ke Database (Ambil Data & Hitung Total Data untuk Pagination)
+		const [attendances, totalItems] = await Promise.all([
+			prisma.attendance.findMany({
+				where: whereClause,
+				include: {
+					employee: {
+						include: {
+							user: {
+								select: { name: true, email: true }, // Jangan kirim password ke frontend!
+							},
+							department: true,
+						},
+					},
+				},
+				orderBy: [
+					{ date: "desc" }, // Urutkan dari tanggal terbaru
+					{ clockIn: "desc" },
+				],
+				skip, // Lewati sekian data (untuk pagination)
+				take: limit, // Ambil maksimal sekian data (untuk pagination)
+			}),
+			prisma.attendance.count({ where: whereClause }), // Hitung total seluruh data
+		]);
+
+		// 5. Kembalikan data beserta informasi halamannya
+		return {
+			data: attendances,
+			pagination: {
+				total_items: totalItems,
+				total_pages: Math.ceil(totalItems / limit),
+				page,
+				limit,
 			},
 		};
 	}

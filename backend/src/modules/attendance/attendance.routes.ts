@@ -19,6 +19,7 @@ router.post(
     authorize("EMPLOYEE"),
     AttendanceController.clockOut
 );
-router.get("/", authenticate, AttendanceController.getAttendance);
+router.get("/", authenticate, AttendanceController.getAll);
+
 
 export default router;

@@ -7,7 +7,7 @@ const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET as string;
 
 export class AuthService {
 	// REGISTER
-	static async register(email: string, password: string, role: any) {
+	static async register(name: string, email: string, password: string, role: any) {
 		const existingUser = await prisma.user.findUnique({ where: { email } });
 
 		if (existingUser) throw new Error("User already exists");
@@ -16,6 +16,7 @@ export class AuthService {
 
 		return prisma.user.create({
 			data: {
+				name,
 				email,
 				password: hashedPassword,
 				role,
@@ -28,6 +29,7 @@ export class AuthService {
 		return jwt.sign(
 			{
 				id: user.id,
+				name: user.name, // 🔥 Masukkan name ke payload JWT
 				email: user.email,
 				role: user.role,
 			},
@@ -64,13 +66,12 @@ export class AuthService {
 		const accessToken = this.generateAccessToken(user);
 		const refreshToken = await this.generateRefreshToken(user.id);
 
-		
-
 		return {
 			accessToken,
 			refreshToken,
 			user: {
 				id: user.id,
+				name: user.name,
 				email: user.email,
 				role: user.role,
 			},
