@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { jwtDecode } from "jwt-decode";
 import { io, Socket } from "socket.io-client";
 import api from "../lib/axios";
-import { Bell, Megaphone, Send, Info, CheckCircle2 } from "lucide-react";
+import { Bell, Megaphone, Send, Info, CheckCircle2, AlertTriangle } from "lucide-react";
 import socket from "../lib/socket";
 
 type DecodedToken = {
