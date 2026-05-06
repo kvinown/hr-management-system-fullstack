@@ -50,6 +50,9 @@ model User {
 
   employee      Employee?
   refreshTokens RefreshToken[]
+  notifications Notification[]
+  sentMessages     Message[]      @relation("SentMessages")
+  receivedMessages Message[]      @relation("ReceivedMessages")
 
   createdAt     DateTime @default(now())
 }
@@ -124,6 +127,7 @@ model Attendance {
   id              String   @id @default(uuid())
   employeeId      String
   employee        Employee @relation(fields: [employeeId], references: [id])
+  @@unique([employeeId, date])
   
   date            DateTime
   clockIn         DateTime? 
@@ -220,6 +224,47 @@ model PayrollComponent {
   type        String   // "EARNING" (Pendapatan) atau "DEDUCTION" (Potongan)
   isDefault   Boolean  @default(false) // Jika true, otomatis berlaku untuk semua karyawan
   amount      Float    // Nominal tetap (Bisa juga diset 0 jika angkanya dinamis dari perhitungan absen)
+  
+  createdAt   DateTime @default(now())
+}
+
+// ==========================================
+// 🔔 FITUR 5: REAL-TIME NOTIFICATIONS
+// ==========================================
+model Notification {
+  id        String   @id @default(uuid())
+  
+  // Jika userId diisi, berarti notifikasi personal (misal: "Gaji Anda sudah cair"). 
+  // Jika userId kosong (null), berarti ini pengumuman global dari HR (Broadcast).
+  userId    String?  
+  user      User?    @relation(fields: [userId], references: [id])
+  
+  title     String
+  message   String   @db.Text
+  type      String   // Contoh: "INFO", "WARNING", "SUCCESS", "ANNOUNCEMENT"
+  isRead    Boolean  @default(false)
+  
+  createdAt DateTime @default(now())
+}
+// ==========================================
+// 💬 FITUR 6: REAL-TIME CHAT
+// ==========================================
+model Message {
+  id          String   @id @default(uuid())
+  
+  senderId    String
+  sender      User     @relation("SentMessages", fields: [senderId], references: [id])
+  
+  receiverId  String
+  receiver    User     @relation("ReceivedMessages", fields: [receiverId], references: [id])
+  
+  content     String   @db.Text
+  isRead      Boolean  @default(false)
+
+  // 🔥 TAMBAHAN UNTUK FILE ATTACHMENT
+  fileUrl     String?  
+  fileName    String?
+  fileType    String?  // 'IMAGE' atau 'DOCUMENT'
   
   createdAt   DateTime @default(now())
 }

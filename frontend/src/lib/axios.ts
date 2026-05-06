@@ -1,7 +1,18 @@
 import axios from "axios";
 
+// 🔥 DETEKSI BASE URL DINAMIS
+// Jika kita buka dari HP (lewat IP), maka API juga harus nembak ke IP Laptop tersebut.
+const getBaseURL = () => {
+  // Ambil hostname tempat kita membuka web saat ini
+  const host = window.location.hostname;
+  
+  // Jika kita buka lewat localhost, gunakan localhost
+  // Jika kita buka lewat IP (misal dari HP), gunakan IP tersebut untuk API-nya
+  return `http://${host}:5000/api`;
+};
+
 const api = axios.create({
-	baseURL: "http://localhost:5000/api",
+	baseURL: getBaseURL(), // 🔥 Otomatis menyesuaikan dengan Network atau Local
 });
 
 //////////////////////////////
@@ -57,7 +68,7 @@ api.interceptors.response.use(
 			const refreshToken = localStorage.getItem("refreshToken");
 
 			try {
-				const res = await axios.post("http://localhost:5000/api/auth/refresh", {
+				const res = await axios.post(`${getBaseURL()}/api/auth/refresh`, {
 					refreshToken,
 				});
 
@@ -88,5 +99,16 @@ api.interceptors.response.use(
 		return Promise.reject(error);
 	},
 );
+
+//////////////////////////////
+// ATTENDANCE API CALLS
+//////////////////////////////
+export const clockIn = async (data: { lat: number; lng: number; photo?: string }) => {
+	return api.post("/attendance/clock-in", data);
+};
+
+export const clockOut = async (data: { lat: number; lng: number; photo?: string }) => {
+	return api.post("/attendance/clock-out", data);
+};
 
 export default api;

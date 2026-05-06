@@ -1,6 +1,7 @@
 import { ReactNode, useState } from "react";
 import Sidebar from "../components/Sidebar";
 import Navbar from "../components/Navbar";
+import FloatingChat from "../components/FloatingChat"; // 🔥 1. Import komponen chat
 import { useTheme } from "../hooks/useTheme";
 
 type Props = {
@@ -9,12 +10,10 @@ type Props = {
 
 export default function MainLayout({ children }: Props) {
 	const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-
-	// 🔥 Cukup panggil hook ini! Logika animasi dan state sudah diurus.
 	const { theme, toggleTheme } = useTheme();
 
 	return (
-		<div className="flex h-screen bg-gray-100 dark:bg-gray-900 transition-colors duration-300 overflow-hidden">
+		<div className="flex h-screen bg-gray-100 dark:bg-gray-900 transition-colors duration-300 overflow-hidden relative">
 			{/* OVERLAY MOBILE */}
 			{isSidebarOpen && (
 				<div
@@ -39,6 +38,9 @@ export default function MainLayout({ children }: Props) {
 				{/* PAGE CONTENT */}
 				<main className="flex-1 overflow-x-hidden overflow-y-auto bg-gray-100 dark:bg-gray-900 p-4 md:p-6 text-gray-800 dark:text-gray-200">{children}</main>
 			</div>
+
+			{/* 🔥 2. Letakkan Floating Chat di sini agar melayang di atas semua konten */}
+			<FloatingChat />
 		</div>
 	);
 }

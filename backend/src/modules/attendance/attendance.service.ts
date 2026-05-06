@@ -1,4 +1,28 @@
 import { prisma } from "../../lib/prisma";
+import fs from "fs";
+import path from "path";
+
+// Fungsi untuk menyimpan gambar Base64 ke folder lokal
+function saveLocalImage(base64String: string, fileName: string): string {
+	// 1. Bersihkan prefix Base64 (data:image/jpeg;base64, ...)
+	const base64Data = base64String.replace(/^data:image\/\w+;base64,/, "");
+	const buffer = Buffer.from(base64Data, "base64");
+
+	// 2. Tentukan path folder tujuan
+	const uploadPath = path.join(__dirname, "../../../public/uploads/attendance");
+
+	// 3. Pastikan folder sudah ada, jika belum buat foldernya
+	if (!fs.existsSync(uploadPath)) {
+		fs.mkdirSync(uploadPath, { recursive: true });
+	}
+
+	// 4. Tulis file ke disk
+	const fullPath = path.join(uploadPath, fileName);
+	fs.writeFileSync(fullPath, buffer);
+
+	// 5. Kembalikan path relatif untuk disimpan di database (agar bisa diakses via URL)
+	return `/uploads/attendance/${fileName}`;
+}
 
 function getTodayDate() {
 	const now = new Date();
@@ -10,10 +34,23 @@ function parseTimeToDate(time: string) {
 	const now = new Date();
 	return new Date(now.getFullYear(), now.getMonth(), now.getDate(), hour, minute);
 }
+// Fungsi untuk menghitung jarak (meter) antara dua titik koordinat
+function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+	const R = 6371e3; // Radius bumi dalam meter
+	const φ1 = (lat1 * Math.PI) / 180;
+	const φ2 = (lat2 * Math.PI) / 180;
+	const Δφ = ((lat2 - lat1) * Math.PI) / 180;
+	const Δλ = ((lon2 - lon1) * Math.PI) / 180;
+
+	const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+	const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+	return R * c; // Hasil dalam meter
+}
 
 export class AttendanceService {
 	// CLOCK IN
-	static async clockIn(userId: string) {
+	static async clockIn(userId: string, lat: number, lng: number, photo?: string) {
 		const employee = await prisma.employee.findUnique({
 			where: { userId },
 			include: { shift: true },
@@ -21,64 +58,55 @@ export class AttendanceService {
 
 		if (!employee) throw new Error("Employee not found");
 
-		const today = getTodayDate();
+		// Geofencing Check
+		const officeLat = await prisma.setting.findUnique({ where: { key: "OFFICE_LAT" } });
+		const officeLng = await prisma.setting.findUnique({ where: { key: "OFFICE_LNG" } });
+		const maxRadius = await prisma.setting.findUnique({ where: { key: "MAX_GEOFENCE_RADIUS" } });
 
-		const existing = await prisma.attendance.findUnique({
-			where: {
-				employeeId_date: {
-					employeeId: employee.id,
-					date: today,
-				},
-			},
+		if (officeLat && officeLng && maxRadius) {
+			const distance = calculateDistance(lat, lng, parseFloat(officeLat.value), parseFloat(officeLng.value));
+			if (distance > parseFloat(maxRadius.value)) {
+				throw new Error(`Anda berada di luar radius kantor (${Math.round(distance)} meter).`);
+			}
+		}
+
+		const today = getTodayDate();
+		const existing = await prisma.attendance.findFirst({
+			where: { employeeId: employee.id, date: today },
 		});
 
-		if (existing && existing.clockIn) {
-			throw new Error("Already clocked in today");
+		if (existing && existing.clockIn) throw new Error("Already clocked in today");
+
+		// 📸 PROSES SIMPAN FOTO
+		let photoPath = null;
+		if (photo) {
+			const fileName = `IN_${employee.id}_${Date.now()}.jpg`;
+			photoPath = saveLocalImage(photo, fileName);
 		}
 
 		const now = new Date();
-
 		const shiftStart = parseTimeToDate(employee.shift.startTime);
 		const lateTolerance = employee.shift.lateTolerance;
-
 		let status: any = "PRESENT";
 		let lateMinutes = 0;
 
 		if (now > shiftStart) {
 			const diff = Math.floor((now.getTime() - shiftStart.getTime()) / 60000);
-
 			if (diff > lateTolerance) {
 				status = "LATE";
 				lateMinutes = diff;
 			}
 		}
 
-		const attendance = await prisma.attendance.upsert({
-			where: {
-				employeeId_date: {
-					employeeId: employee.id,
-					date: today,
-				},
-			},
-			update: {
-				clockIn: now,
-				status,
-				lateMinutes,
-			},
-			create: {
-				employeeId: employee.id,
-				date: today,
-				clockIn: now,
-				status,
-				lateMinutes,
-			},
+		return prisma.attendance.upsert({
+			where: { employeeId_date: { employeeId: employee.id, date: today } },
+			update: { clockIn: now, status, lateMinutes, clockInLat: lat, clockInLng: lng, clockInPhoto: photoPath },
+			create: { employeeId: employee.id, date: today, clockIn: now, status, lateMinutes, clockInLat: lat, clockInLng: lng, clockInPhoto: photoPath },
 		});
-
-		return attendance;
 	}
 
 	// CLOCK OUT
-	static async clockOut(userId: string) {
+	static async clockOut(userId: string, lat: number, lng: number, photo?: string) {
 		const employee = await prisma.employee.findUnique({
 			where: { userId },
 			include: { shift: true },
@@ -87,33 +115,30 @@ export class AttendanceService {
 		if (!employee) throw new Error("Employee not found");
 
 		const today = getTodayDate();
-
-		const attendance = await prisma.attendance.findUnique({
-			where: {
-				employeeId_date: {
-					employeeId: employee.id,
-					date: today,
-				},
-			},
+		const attendance = await prisma.attendance.findFirst({
+			where: { employeeId: employee.id, date: today },
 		});
 
-		if (!attendance || !attendance.clockIn) {
-			throw new Error("You have not clocked in");
-		}
+		if (!attendance || !attendance.clockIn) throw new Error("You have not clocked in");
+		if (attendance.clockOut) throw new Error("Already clocked out");
 
-		if (attendance.clockOut) {
-			throw new Error("Already clocked out");
+		// 📸 PROSES SIMPAN FOTO
+		let photoPath = null;
+		if (photo) {
+			const fileName = `OUT_${employee.id}_${Date.now()}.jpg`;
+			photoPath = saveLocalImage(photo, fileName);
 		}
 
 		const now = new Date();
 		const shiftEnd = parseTimeToDate(employee.shift.endTime);
-
 		let overtimeMinutes = 0;
 		let isOvertime = false;
+		let finalStatus = attendance.status;
 
 		if (now > shiftEnd) {
 			overtimeMinutes = Math.floor((now.getTime() - shiftEnd.getTime()) / 60000);
 			isOvertime = true;
+			finalStatus = "OVERTIME";
 		}
 
 		return prisma.attendance.update({
@@ -122,6 +147,10 @@ export class AttendanceService {
 				clockOut: now,
 				overtimeMinutes,
 				isOvertime,
+				status: finalStatus,
+				clockOutLat: lat,
+				clockOutLng: lng,
+				clockOutPhoto: photoPath,
 			},
 		});
 	}

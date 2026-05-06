@@ -6,17 +6,24 @@ const prisma = new PrismaClient();
 async function main() {
 	console.log("🌱 Memulai proses seeding...");
 
-	// 🧹 1. Membersihkan data lama agar tidak bentrok
+	// 🧹 1. Membersihkan data lama dengan urutan yang benar
 	console.log("🧹 Membersihkan data lama...");
+	// Hapus tabel yang merujuk ke User/Employee dulu (Child Tables)
+	await prisma.refreshToken.deleteMany();
 	await prisma.attendance.deleteMany();
 	await prisma.leave.deleteMany();
+	await prisma.payroll.deleteMany(); // 🔥 TAMBAHKAN BARIS INI
+
+	// Baru hapus tabel induknya
 	await prisma.employee.deleteMany();
+	await prisma.user.deleteMany();
+
+	// Hapus tabel master lainnya
 	await prisma.shift.deleteMany();
 	await prisma.position.deleteMany();
 	await prisma.department.deleteMany();
-	await prisma.setting.deleteMany(); // 🔥 Hapus Setting lama
-	await prisma.payrollComponent.deleteMany(); // 🔥 Hapus Komponen Gaji lama
-	await prisma.user.deleteMany({ where: { role: "EMPLOYEE" } });
+	await prisma.setting.deleteMany();
+	await prisma.payrollComponent.deleteMany();
 
 	// 🔒 2. Hash default password
 	const defaultPassword = await bcrypt.hash("1234567890", 10);
@@ -39,8 +46,8 @@ async function main() {
 	console.log("⏳ Men-generate Global Settings...");
 	await prisma.setting.createMany({
 		data: [
-			{ key: "OFFICE_LAT", value: "-6.8407", description: "Latitude Titik Kantor (Ngamprah, West Java)" },
-			{ key: "OFFICE_LNG", value: "107.5113", description: "Longitude Titik Kantor (Ngamprah, West Java)" },
+			{ key: "OFFICE_LAT", value: "-6.859697", description: "Latitude Titik Kantor (Ngamprah, West Java)" },
+			{ key: "OFFICE_LNG", value: "107.527850", description: "Longitude Titik Kantor (Ngamprah, West Java)" },
 			{ key: "MAX_GEOFENCE_RADIUS", value: "100", description: "Maksimal jarak absen dari kantor (dalam meter)" },
 			{ key: "LATE_PENALTY_PER_MINUTE", value: "5000", description: "Denda keterlambatan per menit (Rupiah)" },
 			{ key: "AUTO_CLOCK_OUT_TIME", value: "23:50", description: "Jam sistem melakukan auto clock-out" },
@@ -164,11 +171,12 @@ async function main() {
 	console.log("⏳ Men-generate simulasi absensi dengan data GPS dan Auto-Flags...");
 	const attendanceData: any[] = [];
 	const startDate = new Date(2026, 0, 1);
-	const endDate = new Date(); // Hari ini
+	const endDate = new Date(2026, 4, 31);
+	// const endDate = new Date(new Date().setDate(new Date().getDate() - 1));
 
 	// Koordinat Base Kantor (Ngamprah)
-	const baseLat = -6.8407;
-	const baseLng = 107.5113;
+	const baseLat = -6.859697;
+	const baseLng = 107.52785;
 
 	for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
 		const dayOfWeek = d.getDay();

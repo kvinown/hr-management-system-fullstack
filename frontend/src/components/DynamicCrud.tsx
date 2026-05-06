@@ -233,24 +233,28 @@ export default function DynamicCrud({ config }: DynamicCrudProps) {
 				)}
 			</div>
 
-			{loading ? (
+			{loading && data.length === 0 ? (
 				<div className="p-10 text-center text-gray-500 dark:text-gray-400">Loading data...</div>
 			) : (
-				<DynamicTable
-					columns={config.displayColumns}
-					data={data}
-					pk={pk}
-					viewMode={viewMode}
-					pagination={pagination}
-					onViewModeChange={(mode) => {
-						setViewMode(mode);
-						setPage(1);
-					}}
-					onPageChange={setPage}
-					onEdit={!config.disableEdit ? handleEdit : undefined}
-					onChangeStatus={!config.disableStatus ? handleChangeStatus : undefined}
-					onDownloadPdf={config.hasDownloadPdf ? handleDownloadPdf : undefined}
-				/>
+				<div className="relative">
+					{/* 🔥 Overlay tipis saat pindah halaman agar terlihat mulus dan tombol tidak bisa diklik dobel */}
+					{loading && <div className="absolute inset-0 bg-white/40 dark:bg-gray-900/40 z-10 backdrop-blur-[1px] rounded-xl transition-all" />}
+					<DynamicTable
+						columns={config.displayColumns}
+						data={data}
+						pk={pk}
+						viewMode={viewMode}
+						pagination={pagination}
+						onViewModeChange={(mode) => {
+							setViewMode(mode);
+							setPage(1);
+						}}
+						onPageChange={setPage}
+						onEdit={!config.disableEdit ? handleEdit : undefined}
+						onChangeStatus={!config.disableStatus ? handleChangeStatus : undefined}
+						onDownloadPdf={config.hasDownloadPdf ? handleDownloadPdf : undefined}
+					/>
+				</div>
 			)}
 
 			{isModalOpen && (

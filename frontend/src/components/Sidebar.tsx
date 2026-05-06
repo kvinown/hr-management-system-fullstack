@@ -127,6 +127,23 @@ export default function Sidebar({ onClose }: SidebarProps) {
 					className={getLinkClass("/payrolls")}>
 					{role === "EMPLOYEE" ? "My Payslips" : "Payroll"}
 				</Link>
+				{role !== "EMPLOYEE" && (
+					<>
+						<div className="mt-8 mb-3 text-xs font-bold text-gray-500 uppercase px-4 tracking-wider">System Configuration</div>
+						<Link
+							to="/settings"
+							onClick={onClose}
+							className={getLinkClass("/settings")}>
+							⚙️ Settings
+						</Link>
+						<Link
+							to="/payroll-components"
+							onClick={onClose}
+							className={getLinkClass("/payroll-components")}>
+							💰 Payroll Components
+						</Link>
+					</>
+				)}
 			</nav>
 
 			{/* 🔥 FOOTER (Logout Button) */}

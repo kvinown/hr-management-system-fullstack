@@ -16,13 +16,14 @@ export class PayrollController {
 
 	static async getAll(req: Request, res: Response) {
 		try {
-			const user = (req as any).user; // 🔥 Tangkap data user dari token
-			const data = await PayrollService.getAll(user); // Lempar ke service
+			const user = (req as any).user;
+			const data = await PayrollService.getAll(user);
 			res.json(data);
 		} catch (error: any) {
 			res.status(500).json({ error: error.message });
 		}
 	}
+
 	static async generatePayslip(req: Request, res: Response) {
 		try {
 			const { id } = req.params;
@@ -31,58 +32,44 @@ export class PayrollController {
 			const payroll = await prisma.payroll.findUnique({
 				where: { id },
 				include: {
-					employee: {
-						include: {
-							user: true,
-							department: true,
-							position: true,
-						},
-					},
+					employee: { include: { user: true, department: true, position: true } },
 				},
 			});
 
 			if (!payroll) throw new Error("Payroll not found");
 
-			// 🔒 KEAMANAN EXTRA: Jika dia Employee, pastikan ini slip gajinya sendiri!
 			if (user.role === "EMPLOYEE" && payroll.employee.userId !== user.id) {
 				return res.status(403).json({ error: "Forbidden: You cannot download someone else's payslip" });
 			}
 
-			// 🔥 Helper untuk merubah angka ke Rupiah tanpa desimal aneh
+			// 🔥 AMBIL DATA SETTING & KOMPONEN UNTUK DITAMPILKAN DI PDF
+			const lateSetting = await prisma.setting.findUnique({ where: { key: "LATE_PENALTY_PER_MINUTE" } });
+			const latePenaltyRate = lateSetting && !isNaN(Number(lateSetting.value)) ? Number(lateSetting.value) : 1000;
+
+			const components = await prisma.payrollComponent.findMany({ where: { isDefault: true } });
+			const earnings = components.filter((c) => c.type === "EARNING");
+			const componentDeductions = components.filter((c) => c.type === "DEDUCTION");
+
 			const formatRp = (num: number) => {
-				return new Intl.NumberFormat("id-ID", {
-					style: "currency",
-					currency: "IDR",
-					maximumFractionDigits: 0,
-				}).format(Math.round(num)); // Pembulatan angka
+				return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(Math.round(num));
 			};
 
 			const doc = new PDFDocument({ margin: 50, size: "A4" });
 
-			// Header Response
 			res.setHeader("Content-Type", "application/pdf");
 			const safeName = payroll.employee.user.name.replace(/\s/g, "-");
 			res.setHeader("Content-Disposition", `attachment; filename=Payslip-${safeName}-${payroll.month}-${payroll.year}.pdf`);
 
 			doc.pipe(res);
 
-			// ==========================================
-			// 🏢 KOP SURAT (HEADER)
-			// ==========================================
-			doc.font("Helvetica-Bold").fontSize(20).text("PT. HR SYSTEM NUSANTARA", { align: "center" });
-			doc.font("Helvetica").fontSize(10).text("Jl. Teknologi Maju No. 123, Jakarta Selatan, 12345", { align: "center" });
-			doc.text("Phone: (021) 1234-5678 | Email: hrd@hrsystem.co.id", { align: "center" });
+			// KOP SURAT
+			doc.font("Helvetica-Bold").fontSize(20).text("PT. SEJAHTERA AMIN", { align: "center" });
+			doc.font("Helvetica").fontSize(10).text("Jl. Teknologi Maju No. 123, Ngamprah, Jawa Barat, 12345", { align: "center" });
+			doc.text("Phone: (021) 1234-5678 | Email: hrd@sejahteraamin.co.id", { align: "center" });
+			doc.moveDown().moveTo(50, doc.y).lineTo(545, doc.y).stroke().moveDown();
 
-			// Garis Pemisah
-			doc.moveDown();
-			doc.moveTo(50, doc.y).lineTo(545, doc.y).stroke();
-			doc.moveDown();
-
-			// ==========================================
-			// 📄 JUDUL DOKUMEN
-			// ==========================================
+			// JUDUL
 			doc.font("Helvetica-Bold").fontSize(14).text("SALARY SLIP", { align: "center" });
-
 			const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 			doc
 				.font("Helvetica")
@@ -90,88 +77,105 @@ export class PayrollController {
 				.text(`Period: ${monthNames[payroll.month - 1]} ${payroll.year}`, { align: "center" });
 			doc.moveDown(2);
 
-			// ==========================================
-			// 👤 INFO KARYAWAN
-			// ==========================================
+			// INFO KARYAWAN
 			const startY = doc.y;
 			doc.font("Helvetica-Bold").fontSize(10).text("Employee Information", 50, startY);
-
-			// Kolom Kiri
 			doc
 				.font("Helvetica")
 				.text("Name", 50, startY + 15)
 				.text(`: ${payroll.employee.user.name}`, 120, startY + 15);
 			doc.text("Employee ID", 50, startY + 30).text(`: ${payroll.employee.code}`, 120, startY + 30);
-
-			// Kolom Kanan
 			doc.text("Department", 320, startY + 15).text(`: ${payroll.employee.department.name}`, 390, startY + 15);
 			doc.text("Position", 320, startY + 30).text(`: ${payroll.employee.position.name}`, 390, startY + 30);
-
 			doc.moveDown(3);
 
-			// ==========================================
-			// 💰 RINCIAN GAJI (TABEL)
-			// ==========================================
+			// TABEL RINCIAN GAJI
 			const tableY = doc.y;
-
-			// Header Tabel
 			doc.font("Helvetica-Bold");
 			doc.text("Description", 50, tableY);
 			doc.text("Earnings (+)", 250, tableY, { width: 120, align: "right" });
 			doc.text("Deductions (-)", 420, tableY, { width: 120, align: "right" });
-
 			doc
 				.moveTo(50, tableY + 15)
 				.lineTo(545, tableY + 15)
 				.stroke();
 
-			// Baris 1: Gaji Pokok
 			doc.font("Helvetica");
-			doc.text("Base Salary", 50, tableY + 25);
-			doc.text(formatRp(payroll.baseSalary), 250, tableY + 25, { width: 120, align: "right" });
-			doc.text("-", 420, tableY + 25, { width: 120, align: "right" });
+			let currentY = tableY + 25;
 
-			// Baris 2: Lembur
-			doc.text("Overtime Pay", 50, tableY + 45);
-			doc.text(formatRp(payroll.overtimePay), 250, tableY + 45, { width: 120, align: "right" });
-			doc.text("-", 420, tableY + 45, { width: 120, align: "right" });
+			// 1. Gaji Pokok
+			doc.text("Base Salary", 50, currentY);
+			doc.text(formatRp(payroll.baseSalary), 250, currentY, { width: 120, align: "right" });
+			doc.text("-", 420, currentY, { width: 120, align: "right" });
+			currentY += 20;
 
-			// Baris 3: Potongan (Telat/Absen)
-			doc.text("Late / Absent Penalty", 50, tableY + 65);
-			doc.text("-", 250, tableY + 65, { width: 120, align: "right" });
-			doc.text(formatRp(payroll.deductions), 420, tableY + 65, { width: 120, align: "right" });
+			// 2. Tunjangan Tambahan (Dinamis dari Komponen)
+			earnings.forEach((c) => {
+				doc.text(c.name, 50, currentY);
+				doc.text(formatRp(c.amount), 250, currentY, { width: 120, align: "right" });
+				doc.text("-", 420, currentY, { width: 120, align: "right" });
+				currentY += 20;
+			});
 
-			// Garis Pemisah Total
+			// 3. Uang Lembur
+			if (payroll.overtimePay > 0) {
+				doc.text("Overtime Pay", 50, currentY);
+				doc.text(formatRp(payroll.overtimePay), 250, currentY, { width: 120, align: "right" });
+				doc.text("-", 420, currentY, { width: 120, align: "right" });
+				currentY += 20;
+			}
+
+			// 4. Potongan Telat (Transparan dengan Rumus)
+			if (payroll.totalLate > 0) {
+				const latePenaltyAmount = payroll.totalLate * latePenaltyRate;
+				doc.text(`Late Penalty (${payroll.totalLate} mins x ${formatRp(latePenaltyRate)})`, 50, currentY);
+				doc.text("-", 250, currentY, { width: 120, align: "right" });
+				doc.text(formatRp(latePenaltyAmount), 420, currentY, { width: 120, align: "right" });
+				currentY += 20;
+			}
+
+			// 5. Potongan Alpha (Transparan)
+			if (payroll.totalAbsent > 0) {
+				const absentPenaltyAmount = payroll.totalAbsent * (payroll.baseSalary / 22);
+				doc.text(`Absent Penalty (${payroll.totalAbsent} days)`, 50, currentY);
+				doc.text("-", 250, currentY, { width: 120, align: "right" });
+				doc.text(formatRp(absentPenaltyAmount), 420, currentY, { width: 120, align: "right" });
+				currentY += 20;
+			}
+
+			// 6. Potongan Tambahan (Dinamis dari Komponen seperti BPJS)
+			componentDeductions.forEach((c) => {
+				doc.text(c.name, 50, currentY);
+				doc.text("-", 250, currentY, { width: 120, align: "right" });
+				doc.text(formatRp(c.amount), 420, currentY, { width: 120, align: "right" });
+				currentY += 20;
+			});
+
+			// GARIS TOTAL
 			doc
-				.moveTo(50, tableY + 85)
-				.lineTo(545, tableY + 85)
+				.moveTo(50, currentY + 5)
+				.lineTo(545, currentY + 5)
 				.stroke();
+			currentY += 20;
 
-			// ==========================================
-			// 💵 TOTAL TAKE HOME PAY
-			// ==========================================
+			// TOTAL TAKE HOME PAY
 			doc.font("Helvetica-Bold").fontSize(12);
-			doc.text("TOTAL TAKE HOME PAY", 50, tableY + 100);
-			doc.text(formatRp(payroll.totalSalary), 420, tableY + 100, { width: 120, align: "right" });
+			doc.text("TOTAL TAKE HOME PAY", 50, currentY);
+			doc.text(formatRp(payroll.totalSalary), 420, currentY, { width: 120, align: "right" });
 
-			// ==========================================
-			// ✍️ TANDA TANGAN
-			// ==========================================
-			doc.moveDown(5);
-			const signY = doc.y;
+			// TANDA TANGAN Bawah
+			currentY += 60;
 			doc.font("Helvetica").fontSize(10);
+			doc.text("Prepared by,", 50, currentY);
+			doc.text("Received by,", 400, currentY);
 
-			doc.text("Prepared by,", 50, signY);
-			doc.text("Received by,", 400, signY);
+			currentY += 60;
+			doc.text("_______________________", 50, currentY);
+			doc.font("Helvetica-Bold").text("HR Department", 50, currentY + 15);
 
-			// Garis Tanda tangan
-			doc.text("_______________________", 50, signY + 60);
-			doc.font("Helvetica-Bold").text("HR Department", 50, signY + 75);
+			doc.font("Helvetica").text("_______________________", 400, currentY);
+			doc.font("Helvetica-Bold").text(payroll.employee.user.name, 400, currentY + 15);
 
-			doc.font("Helvetica").text("_______________________", 400, signY + 60);
-			doc.font("Helvetica-Bold").text(payroll.employee.user.name, 400, signY + 75);
-
-			// Tutup Dokumen
 			doc.end();
 		} catch (error: any) {
 			res.status(400).json({ error: error.message });

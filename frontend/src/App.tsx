@@ -10,6 +10,8 @@ import Positions from "./pages/Positions";
 import Attendances from "./pages/Attendances";
 import Payrolls from "./pages/Payrolls";
 import Leaves from "./pages/Leaves";
+import PayrollComponents from "./pages/hr/PayrollComponents";
+import Settings from "./pages/hr/Settings";
 
 function App() {
 	return (
@@ -28,6 +30,29 @@ function App() {
 						<ProtectedRoute>
 							<MainLayout>
 								<Dashboard />
+							</MainLayout>
+						</ProtectedRoute>
+					}
+				/>
+				{/* 🔥 Tambahkan Rute Settings */}
+				<Route
+					path="/settings"
+					element={
+						<ProtectedRoute>
+							<MainLayout>
+								<Settings />
+							</MainLayout>
+						</ProtectedRoute>
+					}
+				/>
+
+				{/* 🔥 Tambahkan Rute Payroll Components */}
+				<Route
+					path="/payroll-components"
+					element={
+						<ProtectedRoute>
+							<MainLayout>
+								<PayrollComponents />
 							</MainLayout>
 						</ProtectedRoute>
 					}
