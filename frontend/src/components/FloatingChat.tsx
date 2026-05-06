@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { jwtDecode } from "jwt-decode";
-import { io, Socket } from "socket.io-client";
+import socket from "../lib/socket"; // 🔥 Import socket dari lib
 import api from "../lib/axios";
 import { MessageCircle, X, ChevronLeft, Send, User, Search, BellRing, Paperclip, FileText, Download, UploadCloud } from "lucide-react";
 
@@ -17,16 +17,13 @@ export default function FloatingChat() {
 	const [loadingHistory, setLoadingHistory] = useState(false);
 	const [uploading, setUploading] = useState(false);
 
-	// 🔥 State Drag & Drop
 	const [isDragging, setIsDragging] = useState(false);
-
 	const [toast, setToast] = useState<{ title: string; message: string } | null>(null);
 
-	const socketRef = useRef<Socket | null>(null);
 	const messagesEndRef = useRef<HTMLDivElement>(null);
-	const inputRef = useRef<HTMLInputElement>(null); // 🔥 Ref untuk Auto-Focus
-	const fileInputRef = useRef<HTMLInputElement>(null); // 🔥 Ref untuk Upload File
-	const dragCounter = useRef(0); // 🔥 Mencegah bug kedap-kedip saat drag & drop
+	const inputRef = useRef<HTMLInputElement>(null);
+	const fileInputRef = useRef<HTMLInputElement>(null);
+	const dragCounter = useRef(0);
 
 	const selectedContactRef = useRef(selectedContact);
 	const contactsRef = useRef(contacts);
@@ -42,7 +39,6 @@ export default function FloatingChat() {
 		isOpenRef.current = isOpen;
 	}, [isOpen]);
 
-	// 🔥 1. FUNGSI FETCH CONTACTS
 	const fetchContacts = useCallback(() => {
 		if (user) {
 			api
@@ -52,7 +48,6 @@ export default function FloatingChat() {
 		}
 	}, [user]);
 
-	// 🔥 2. AUTO FOCUS saat buka chat room
 	useEffect(() => {
 		if (selectedContact) {
 			setTimeout(() => {
@@ -61,7 +56,7 @@ export default function FloatingChat() {
 		}
 	}, [selectedContact]);
 
-	// 🔥 3. SOCKET & ALWAYS CONNECTED LOGIC
+	// 🔥 MENGGUNAKAN GLOBAL SOCKET
 	useEffect(() => {
 		const token = localStorage.getItem("accessToken");
 		if (token) {
@@ -69,11 +64,11 @@ export default function FloatingChat() {
 				const decoded: any = jwtDecode(token);
 				setUser(decoded);
 
-				const host = window.location.hostname;
-				socketRef.current = io(`http://${host}:5000`);
-				socketRef.current.emit("register_user", decoded.id);
+				// Daftarkan user ke room
+				socket.emit("register_user", decoded.id);
 
-				socketRef.current.on("receive_private_message", (msg) => {
+				// Listener pesan masuk
+				const handleReceiveMessage = (msg: any) => {
 					const currentChatId = selectedContactRef.current?.id;
 
 					if (msg.senderId === currentChatId || msg.receiverId === currentChatId) {
@@ -81,7 +76,6 @@ export default function FloatingChat() {
 						scrollToBottom();
 					}
 
-					// Update UI Chatroom dan List Kontak
 					setContacts((prevContacts) => {
 						const updated = prevContacts.map((c) => {
 							if (c.id === msg.senderId || c.id === msg.receiverId) {
@@ -96,7 +90,6 @@ export default function FloatingChat() {
 						return updated.sort((a, b) => (b.lastMessageTime || 0) - (a.lastMessageTime || 0));
 					});
 
-					// Pop-up Toast
 					if (msg.senderId !== decoded.id && (msg.senderId !== currentChatId || !isOpenRef.current)) {
 						const senderName = contactsRef.current.find((c) => c.id === msg.senderId)?.name || "New Message";
 						const displayMsg = msg.fileType ? `📁 Sent an attachment` : msg.content;
@@ -106,19 +99,22 @@ export default function FloatingChat() {
 						} catch (e) {}
 						setTimeout(() => setToast(null), 4000);
 					}
-				});
+				};
+
+				socket.on("receive_private_message", handleReceiveMessage);
+
+				// Cleanup listener saat komponen di-unmount
+				return () => {
+					socket.off("receive_private_message", handleReceiveMessage);
+				};
 			} catch (err) {}
 		}
-		return () => {
-			socketRef.current?.disconnect();
-		};
 	}, []);
 
 	useEffect(() => {
 		fetchContacts();
 	}, [user, fetchContacts]);
 
-	// 🔥 4. LOAD HISTORY
 	useEffect(() => {
 		if (selectedContact) {
 			setLoadingHistory(true);
@@ -139,19 +135,16 @@ export default function FloatingChat() {
 		}, 100);
 	};
 
-	// 🔥 5. LOGIKA DRAG & DROP
 	const handleDragEnter = (e: React.DragEvent) => {
 		e.preventDefault();
 		dragCounter.current++;
 		if (selectedContact) setIsDragging(true);
 	};
-
 	const handleDragLeave = (e: React.DragEvent) => {
 		e.preventDefault();
 		dragCounter.current--;
 		if (dragCounter.current === 0) setIsDragging(false);
 	};
-
 	const handleDrop = (e: React.DragEvent) => {
 		e.preventDefault();
 		setIsDragging(false);
@@ -165,42 +158,30 @@ export default function FloatingChat() {
 		setUploading(true);
 		const formData = new FormData();
 		formData.append("file", file);
-
 		try {
 			const res = await api.post("/chat/upload", formData, { headers: { "Content-Type": "multipart/form-data" } });
 			const { fileUrl, fileName, fileType } = res.data;
-
-			socketRef.current?.emit("send_private_message", {
-				senderId: user.id,
-				receiverId: selectedContact.id,
-				content: "",
-				fileUrl,
-				fileName,
-				fileType,
-			});
+			socket.emit("send_private_message", { senderId: user.id, receiverId: selectedContact.id, content: "", fileUrl, fileName, fileType });
 		} catch (err) {
 			alert("Failed to upload file");
 		} finally {
 			setUploading(false);
-			if (fileInputRef.current) fileInputRef.current.value = ""; // Reset input
+			if (fileInputRef.current) fileInputRef.current.value = "";
 			scrollToBottom();
 		}
 	};
 
-	// 🔥 Fungsi Kirim Pesan Teks
 	const handleSendMessage = (e: React.FormEvent) => {
 		e.preventDefault();
-		if (!newMessage.trim() || !selectedContact || !user || !socketRef.current) return;
-
-		socketRef.current.emit("send_private_message", { senderId: user.id, receiverId: selectedContact.id, content: newMessage });
+		if (!newMessage.trim() || !selectedContact || !user) return;
+		socket.emit("send_private_message", { senderId: user.id, receiverId: selectedContact.id, content: newMessage });
 		setNewMessage("");
-		inputRef.current?.focus(); // Fokus lagi setelah kirim
+		inputRef.current?.focus();
 	};
 
 	const getFileUrl = (path: string) => `http://${window.location.hostname}:5000${path}`;
 
 	if (!user) return null;
-
 	const totalUnread = contacts.reduce((sum, c) => sum + (c.unreadCount || 0), 0);
 	const filteredContacts = contacts.filter((c) => c.name.toLowerCase().includes(searchQuery.toLowerCase()));
 
@@ -246,7 +227,6 @@ export default function FloatingChat() {
 					onDragOver={(e) => e.preventDefault()}
 					onDragLeave={handleDragLeave}
 					onDrop={handleDrop}>
-					{/* 🔥 OVERLAY SAAT DRAG & DROP */}
 					{isDragging && (
 						<div className="absolute inset-0 bg-blue-600/90 z-[60] flex flex-col items-center justify-center text-white p-6 text-center animate-pulse pointer-events-none">
 							<UploadCloud
@@ -256,8 +236,6 @@ export default function FloatingChat() {
 							<p className="text-xl font-bold">Drop to send file</p>
 						</div>
 					)}
-
-					{/* HEADER */}
 					<div className="bg-blue-600 text-white p-4 flex items-center justify-between shadow-md z-10">
 						<div className="flex items-center gap-3">
 							{selectedContact ? (
@@ -284,7 +262,6 @@ export default function FloatingChat() {
 						</button>
 					</div>
 
-					{/* CONTACT LIST */}
 					{!selectedContact && (
 						<div className="flex-1 flex flex-col overflow-hidden bg-gray-50 dark:bg-gray-900/50">
 							<div className="p-3 bg-white dark:bg-gray-800 border-b border-gray-100 dark:border-gray-700 relative">
@@ -323,7 +300,6 @@ export default function FloatingChat() {
 						</div>
 					)}
 
-					{/* CHAT ROOM */}
 					{selectedContact && (
 						<>
 							<div className="flex-1 overflow-y-auto p-4 bg-[#f8f9fa] dark:bg-gray-900 space-y-3">
@@ -337,10 +313,7 @@ export default function FloatingChat() {
 												key={idx}
 												className={`flex flex-col ${isMe ? "items-end" : "items-start"}`}>
 												<div
-													className={`max-w-[80%] p-3 rounded-2xl text-sm shadow-sm ${
-														isMe ? "bg-blue-600 text-white rounded-br-none" : "bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 border border-gray-100 dark:border-gray-700 rounded-bl-none"
-													}`}>
-													{/* Rendering File (Gambar atau Document) */}
+													className={`max-w-[80%] p-3 rounded-2xl text-sm shadow-sm ${isMe ? "bg-blue-600 text-white rounded-br-none" : "bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 border border-gray-100 dark:border-gray-700 rounded-bl-none"}`}>
 													{msg.fileUrl && msg.fileType === "IMAGE" && (
 														<a
 															href={getFileUrl(msg.fileUrl)}
@@ -353,15 +326,12 @@ export default function FloatingChat() {
 															/>
 														</a>
 													)}
-
 													{msg.fileUrl && msg.fileType === "DOCUMENT" && (
 														<a
 															href={getFileUrl(msg.fileUrl)}
 															target="_blank"
 															rel="noopener noreferrer"
-															className={`flex items-center gap-2 p-2 rounded-lg border ${
-																isMe ? "bg-blue-700 border-blue-500 hover:bg-blue-800 text-white" : "bg-gray-50 border-gray-200 dark:bg-gray-700 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200"
-															} transition mb-1`}>
+															className={`flex items-center gap-2 p-2 rounded-lg border ${isMe ? "bg-blue-700 border-blue-500 hover:bg-blue-800 text-white" : "bg-gray-50 border-gray-200 dark:bg-gray-700 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200"} transition mb-1`}>
 															<FileText
 																size={24}
 																className={isMe ? "text-white" : "text-blue-500"}
@@ -370,8 +340,6 @@ export default function FloatingChat() {
 															<Download size={16} />
 														</a>
 													)}
-
-													{/* Teks Pesan */}
 													{msg.content && <span>{msg.content}</span>}
 												</div>
 												<span className="text-[9px] text-gray-400 mt-1 px-1">{new Date(msg.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
@@ -382,13 +350,10 @@ export default function FloatingChat() {
 								{uploading && <div className="text-center text-xs text-gray-400 animate-pulse">Uploading file...</div>}
 								<div ref={messagesEndRef} />
 							</div>
-
-							{/* FOOTER: INPUT PESAN & UPLOAD FILE */}
 							<div className="p-3 bg-white dark:bg-gray-800 border-t border-gray-100 dark:border-gray-700">
 								<form
 									onSubmit={handleSendMessage}
 									className="flex items-center gap-2">
-									{/* Tombol Attach File */}
 									<input
 										type="file"
 										ref={fileInputRef}
@@ -405,7 +370,6 @@ export default function FloatingChat() {
 										className="text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 p-2 transition">
 										<Paperclip size={20} />
 									</button>
-
 									<input
 										ref={inputRef}
 										type="text"

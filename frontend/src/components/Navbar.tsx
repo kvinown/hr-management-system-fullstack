@@ -3,6 +3,7 @@ import { jwtDecode } from "jwt-decode";
 import { io, Socket } from "socket.io-client";
 import api from "../lib/axios";
 import { Bell, Megaphone, Send, Info, CheckCircle2 } from "lucide-react";
+import socket from "../lib/socket";
 
 type DecodedToken = {
 	id: string;
@@ -73,24 +74,23 @@ export default function Navbar({ onOpenMenu, theme, toggleTheme }: NavbarProps) 
 	useEffect(() => {
 		if (!user) return;
 
-		// Sambungkan ke Backend Socket
-		const host = window.location.hostname;
-		const socket: Socket = io(`http://${host}:5000`);
-
 		// Mendengarkan Broadcast Global dari HR
-		socket.on("new_notification", (notification) => {
+		const handleNewNotification = (notification: any) => {
 			setNotifications((prev) => [notification, ...prev]);
-			// Opsional: Mainkan suara notifikasi kecil
-			// new Audio('/ding.mp3').play().catch(()=>{});
-		});
+		};
 
 		// Mendengarkan Notifikasi Personal
-		socket.on(`notification_${user.id}`, (notification) => {
+		const handlePersonalNotification = (notification: any) => {
 			setNotifications((prev) => [notification, ...prev]);
-		});
+		};
+
+		socket.on("new_notification", handleNewNotification);
+		socket.on(`notification_${user.id}`, handlePersonalNotification);
 
 		return () => {
-			socket.disconnect(); // Putuskan koneksi saat komponen mati
+			// Matikan listener spesifik untuk komponen ini saja agar tidak memory leak
+			socket.off("new_notification", handleNewNotification);
+			socket.off(`notification_${user.id}`, handlePersonalNotification);
 		};
 	}, [user]);
 
