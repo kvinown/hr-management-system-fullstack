@@ -3,12 +3,14 @@ import axios from "axios";
 // 🔥 DETEKSI BASE URL DINAMIS
 // Jika kita buka dari HP (lewat IP), maka API juga harus nembak ke IP Laptop tersebut.
 const getBaseURL = () => {
-  // Ambil hostname tempat kita membuka web saat ini
-  const host = window.location.hostname;
-  
-  // Jika kita buka lewat localhost, gunakan localhost
-  // Jika kita buka lewat IP (misal dari HP), gunakan IP tersebut untuk API-nya
-  return `http://${host}:5000/api`;
+	// Jika ada environment variable dari Railway, gunakan itu
+	if (import.meta.env.VITE_API_URL) {
+		return import.meta.env.VITE_API_URL;
+	}
+
+	// Jika tidak ada (sedang di lokal), gunakan logika IP/Hostname kamu
+	const host = window.location.hostname;
+	return `http://${host}:5000/api`;
 };
 
 const api = axios.create({

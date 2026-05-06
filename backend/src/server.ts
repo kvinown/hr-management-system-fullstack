@@ -12,7 +12,7 @@ const server = http.createServer(app);
 initSocket(server);
 
 // 🔥 Gunakan server.listen, BUKAN app.listen
-server.listen(PORT, () => {
+server.listen(PORT, "0.0.0.0", () => {
 	console.log(`🚀 Server running on port ${PORT}`);
 	console.log(`📡 WebSocket server is active`);
 });
